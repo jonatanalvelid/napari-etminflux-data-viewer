@@ -6,8 +6,8 @@ email: jonatan.alvelid@scilifelab.se
 full_name: Jonatan Alvelid
 github_repository_url: https://github.com/jonatanalvelid/napari-etminflux-data-viewer
 github_username_or_organization: jonatanalvelid
-include_reader_plugin: true
-include_sample_data_plugin: true
+include_reader_plugin: false
+include_sample_data_plugin: false
 include_widget_plugin: true
 include_writer_plugin: false
 install_dependabot: true

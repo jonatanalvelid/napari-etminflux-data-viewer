@@ -6,45 +6,18 @@ visibility: public
 # categories: []
 contributions:
   commands:
-    - id: napari-etminflux-data-viewer.get_reader
-      python_name: napari_etminflux_data_viewer._reader:napari_get_reader
-      title: Open data with etMINFLUX Data Viewer
-    - id: napari-etminflux-data-viewer.make_sample_data
-      python_name: napari_etminflux_data_viewer._sample_data:make_sample_data
-      title: Load sample data from etMINFLUX Data Viewer
     - id: napari-etminflux-data-viewer.make_container_widget
       python_name: napari_etminflux_data_viewer:ImageThreshold
       title: Make threshold Container widget
-    - id: napari-etminflux-data-viewer.make_magic_widget
-      python_name: napari_etminflux_data_viewer:threshold_magic_widget
-      title: Make threshold magic widget
-    - id: napari-etminflux-data-viewer.make_function_widget
-      python_name: napari_etminflux_data_viewer:threshold_autogenerate_widget
-      title: Make threshold function widget
-    - id: napari-etminflux-data-viewer.make_qwidget
-      python_name: napari_etminflux_data_viewer:ExampleQWidget
-      title: Make example QWidget
-  readers:
-    - command: napari-etminflux-data-viewer.get_reader
-      accepts_directories: false
-      filename_patterns: ['*.npy']
-  sample_data:
-    - command: napari-etminflux-data-viewer.make_sample_data
-      display_name: etMINFLUX Data Viewer
-      key: unique_id.1
+    - id: napari-etminflux-data-viewer.make_loaderwidget
+      python_name: napari_etminflux_data_viewer:LoaderWidget
+      title: Make example LoaderWidget
   widgets:
     - command: napari-etminflux-data-viewer.make_container_widget
       display_name: Container Threshold
-    - command: napari-etminflux-data-viewer.make_magic_widget
-      display_name: Magic Threshold
-    - command: napari-etminflux-data-viewer.make_function_widget
-      autogenerate: true
-      display_name: Autogenerate Threshold
-    - command: napari-etminflux-data-viewer.make_qwidget
-      display_name: Example QWidget
+    - command: napari-etminflux-data-viewer.make_loaderwidget
+      display_name: LoaderWidget
   menus:
     napari/layers/segment:
       - command: napari-etminflux-data-viewer.make_container_widget
-      - command: napari-etminflux-data-viewer.make_magic_widget
-      - command: napari-etminflux-data-viewer.make_function_widget
-      - command: napari-etminflux-data-viewer.make_qwidget
+      - command: napari-etminflux-data-viewer.make_loaderwidget

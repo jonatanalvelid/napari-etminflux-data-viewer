@@ -29,38 +29,202 @@ References:
 Replace code below according to your needs.
 """
 
+import os
 from typing import TYPE_CHECKING
 
-from magicgui import magic_factory
+import numpy as np
+import tifffile
 from magicgui.widgets import CheckBox, Container, create_widget
-from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
+from qtpy.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
 from skimage.util import img_as_float
+
+from . import obf_support
 
 if TYPE_CHECKING:
     import napari
 
 
-# Uses the `autogenerate: true` flag in the plugin manifest
-# to indicate it should be wrapped as a magicgui to autogenerate
-# a widget.
-def threshold_autogenerate_widget(
-    img: "napari.types.ImageData",
-    threshold: "float",
-) -> "napari.types.LabelsData":
-    return img_as_float(img) > threshold
+class LoaderWidget(QWidget):
+    """A widget to load etMINFLUX event files into napari. Currently only simple etMINFLUX experiments with a single ROI per event are supported."""
 
+    def __init__(self, viewer: "napari.viewer.Viewer"):
+        super().__init__()
+        self.viewer = viewer
+        self.viewer.axes.visible = True
+        viewer.dims.order = (
+            1,
+            0,
+        )  # set default dims order to XY instead of YX
 
-# the magic_factory decorator lets us customize aspects of our widget
-# we specify a widget type for the threshold parameter
-# and use auto_call=True so the function is called whenever
-# the value of a parameter changes
-@magic_factory(
-    threshold={"widget_type": "FloatSlider", "max": 1}, auto_call=True
-)
-def threshold_magic_widget(
-    img_layer: "napari.layers.Image", threshold: "float"
-) -> "napari.types.LabelsData":
-    return img_as_float(img_layer.data) > threshold
+        self.folderField = QLineEdit()
+        self.folderField.setReadOnly(True)
+
+        self.loadFolderButton = QPushButton("Load folder")
+        self.loadFolderButton.clicked.connect(self._list_events_from_folder)
+
+        self.loadEventButton = QPushButton("Load event")
+        self.loadEventButton.clicked.connect(self._load_event)
+
+        # add all events in a dropdown list
+        self.events = []
+        self.eventsPar = QComboBox()
+        self.eventsParLabel = QLabel("Events in folder")
+
+        self.eventsPath = None
+
+        self.currentImage = None
+        self.currentTracks = None
+
+        # create grid and grid layout
+        self.grid = QGridLayout()
+        self.setLayout(self.grid)
+
+        self.layout().addWidget(self.folderField, 0, 0, 1, 2)
+        self.layout().addWidget(self.loadFolderButton, 1, 0, 1, 2)
+        self.layout().addWidget(self.eventsParLabel, 2, 0)
+        self.layout().addWidget(self.eventsPar, 2, 1)
+        self.layout().addWidget(self.loadEventButton, 3, 0, 1, 2)
+
+    def _list_events_from_folder(self):
+        self.eventsPath = QFileDialog.getExistingDirectory(
+            caption="Choose folder with events"
+        )
+        self.folderField.setText(self.eventsPath)
+        for msrfile in [
+            file
+            for file in os.listdir(self.eventsPath)
+            if file.endswith(".msr")
+        ]:
+            if os.path.isfile(os.path.join(self.eventsPath, msrfile)):
+                event_name = msrfile.split(".")[0].split("_")[0]
+                self.events.append(event_name)
+        self.eventsPar.addItems(self.events)
+        self.eventsPar.setCurrentIndex(0)
+        print(f"Loading events from folder: {self.eventsPath}")
+
+    def _load_event(self):
+        msrfiles = [
+            file
+            for file in os.listdir(self.eventsPath)
+            if file.endswith(".msr")
+        ]
+        npyfiles = [
+            file
+            for file in os.listdir(self.eventsPath)
+            if file.endswith(".npy")
+        ]
+        confrawfiles = [
+            file
+            for file in os.listdir(self.eventsPath)
+            if file.endswith(".tif") and "raw" in file
+        ]
+        logfiles = [
+            file
+            for file in os.listdir(self.eventsPath)
+            if file.endswith(".txt") and "log" in file
+        ]
+
+        selected_event_id = self.eventsPar.currentIndex()
+        eventmsrfile = msrfiles[selected_event_id]
+        eventnpyfile = npyfiles[selected_event_id]
+        eventconfrawfile = confrawfiles[selected_event_id]
+        eventlogfile = logfiles[selected_event_id]
+        print(eventlogfile)
+
+        # load msr file and read confocal metadata
+        msr_dataset = obf_support.File(
+            os.path.join(self.eventsPath, eventmsrfile)
+        )
+        conf_msr_stack_index = 0  # in current imspector templ file, conf dataset always 0; might change with other templ
+        conf_stack = msr_dataset.stacks[conf_msr_stack_index]
+        pxsize = conf_stack.pixel_sizes[0] * 1e6
+        pxshift = pxsize / 2
+        conf_size_px = (conf_stack.shape[0], conf_stack.shape[1])
+        conf_size = (conf_stack.lengths[0] * 1e6, conf_stack.lengths[1] * 1e6)
+        conf_offset = (
+            conf_stack.offsets[0] * 1e6,
+            conf_stack.offsets[1] * 1e6,
+        )
+        print(f"MSR file loaded: {msr_dataset}")
+        print(
+            f"Confocal stack info - size: {conf_size_px[0]}x{conf_size_px[1]} pixels, physical size: {conf_size[0]}x{conf_size[1]} um, pixel size: {pxsize} um, offset: {conf_offset} um"
+        )
+
+        # load triggering confocal raw image
+        image_conf = np.swapaxes(
+            tifffile.imread(os.path.join(self.eventsPath, eventconfrawfile))[
+                -1
+            ],
+            1,
+            0,
+        )
+        viewer_conf = self.viewer.add_image(
+            image_conf,
+            name=f"confocal-event{selected_event_id}",
+            colormap="gray",
+            blending="additive",
+            contrast_limits=[0, np.max(image_conf)],
+        )
+        viewer_conf.scale = (pxsize, pxsize)
+        viewer_conf.translate = (
+            conf_offset[0] - pxshift,
+            conf_offset[1] - pxshift,
+        )
+        print(
+            f"Confocal image added to viewer: {image_conf.shape[0]}x{image_conf.shape[1]} pixels, pixel size: {pxsize} um, offset: {conf_offset} um"
+        )
+
+        # load MINFLUX localization data
+        loc_it = 3  # =4 for default 2D data, =9 for default 3D data
+        mfx_dataset = np.load(os.path.join(self.eventsPath, eventnpyfile))
+        x = np.zeros((len(mfx_dataset), 1))
+        y = np.zeros((len(mfx_dataset), 1))
+        tid = np.zeros((len(mfx_dataset), 1))
+        tim = np.zeros((len(mfx_dataset), 1))
+        for i in range(len(mfx_dataset)):
+            x[i] = mfx_dataset[i][0][loc_it][2][0]
+            y[i] = mfx_dataset[i][0][loc_it][2][1]
+            tid[i] = mfx_dataset[i][4]
+            tim[i] = mfx_dataset[i][3]  # TODO Why do I not take tic anymore?
+        x_raw = x * 1e6
+        y_raw = y * 1e6
+        tid = tid.flatten()
+        tim = tim.flatten()
+        track_ids = list(map(int, set(tid)))
+        track_ids.sort()
+        print(
+            f"Localization data loaded: {len(mfx_dataset)} localizations, {len(track_ids)} tracks"
+        )
+
+        tracks = np.zeros((len(mfx_dataset), 4))
+        tracks[:, 0] = tid
+        tracks[:, 1] = tim
+        tracks[:, 2] = x_raw.flatten()
+        tracks[:, 3] = y_raw.flatten()
+
+        # sort by track_id, then time
+        order = np.lexsort((tracks[:, 1], tracks[:, 0]))
+        tracks = tracks[order]
+
+        self.viewer.add_tracks(
+            tracks,
+            name=f"minflux-tracks-event{selected_event_id}",
+            tail_width=0.001,
+            tail_length=500,
+            opacity=0.8,
+            blending="translucent",
+        )
+        print(
+            f"Tracks added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
+        )
 
 
 # if we want even more control over our widget, we can use
@@ -110,20 +274,3 @@ class ImageThreshold(Container):
             self._viewer.layers[name].data = thresholded
         else:
             self._viewer.add_labels(thresholded, name=name)
-
-
-class ExampleQWidget(QWidget):
-    # your QWidget.__init__ can optionally request the napari viewer instance
-    # use a type annotation of 'napari.viewer.Viewer' for any parameter
-    def __init__(self, viewer: "napari.viewer.Viewer"):
-        super().__init__()
-        self.viewer = viewer
-
-        btn = QPushButton("Click me!")
-        btn.clicked.connect(self._on_click)
-
-        self.setLayout(QHBoxLayout())
-        self.layout().addWidget(btn)
-
-    def _on_click(self):
-        print("napari has", len(self.viewer.layers), "layers")
