@@ -42,6 +42,7 @@ from qtpy.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QTextBrowser,
     QWidget,
 )
 from skimage.util import img_as_float
@@ -58,11 +59,6 @@ class LoaderWidget(QWidget):
     def __init__(self, viewer: "napari.viewer.Viewer"):
         super().__init__()
         self.viewer = viewer
-        self.viewer.axes.visible = True
-        viewer.dims.order = (
-            1,
-            0,
-        )  # set default dims order to XY instead of YX
 
         self.folderField = QLineEdit()
         self.folderField.setReadOnly(True)
@@ -78,6 +74,20 @@ class LoaderWidget(QWidget):
         self.eventsPar = QComboBox()
         self.eventsParLabel = QLabel("Events in folder")
 
+        # add recording modes in dropdown list
+        self.recordingModes = [
+            "Single",
+            "MultiROI",
+            "SingleROIFollow",
+            "MultiROIFollow",
+        ]
+        self.recordingModesPar = QComboBox()
+        self.recordingModesPar.addItems(self.recordingModes)
+        self.recordingModesParLabel = QLabel("Recording mode")
+
+        # create text browser for info from event log file
+        self.logTextBrowser = QTextBrowser()
+
         self.eventsPath = None
 
         self.currentImage = None
@@ -91,13 +101,17 @@ class LoaderWidget(QWidget):
         self.layout().addWidget(self.loadFolderButton, 1, 0, 1, 2)
         self.layout().addWidget(self.eventsParLabel, 2, 0)
         self.layout().addWidget(self.eventsPar, 2, 1)
-        self.layout().addWidget(self.loadEventButton, 3, 0, 1, 2)
+        self.layout().addWidget(self.recordingModesParLabel, 3, 0)
+        self.layout().addWidget(self.recordingModesPar, 3, 1)
+        self.layout().addWidget(self.loadEventButton, 4, 0, 1, 2)
+        self.layout().addWidget(self.logTextBrowser, 5, 0, 1, 2)
 
     def _list_events_from_folder(self):
         self.eventsPath = QFileDialog.getExistingDirectory(
             caption="Choose folder with events"
         )
         self.folderField.setText(self.eventsPath)
+        self.events = []
         for msrfile in [
             file
             for file in os.listdir(self.eventsPath)
@@ -106,11 +120,33 @@ class LoaderWidget(QWidget):
             if os.path.isfile(os.path.join(self.eventsPath, msrfile)):
                 event_name = msrfile.split(".")[0].split("_")[0]
                 self.events.append(event_name)
+        self.eventsPar.clear()
         self.eventsPar.addItems(self.events)
         self.eventsPar.setCurrentIndex(0)
         print(f"Loading events from folder: {self.eventsPath}")
 
+    def _set_logbrowser_text(self, filepath):
+        with open(filepath) as f:
+            text = f.read()
+        self.logTextBrowser.setPlainText(text)
+
     def _load_event(self):
+        # set default plotting params
+        tail_width = 0.05
+        tail_length = 20
+        head_length = 3
+        opacity = 0.8
+
+        # check if an event is already loaded, and if so, remove it
+        if self.currentImage is not None:
+            self.viewer.layers.remove(self.currentImage)
+            self.currentImage = None
+        if self.currentTracks is not None:
+            for trackslayer in self.currentTracks:
+                self.viewer.layers.remove(trackslayer)
+            self.currentTracks = None
+
+        # list all available relevant files in the folder
         msrfiles = [
             file
             for file in os.listdir(self.eventsPath)
@@ -131,13 +167,19 @@ class LoaderWidget(QWidget):
             for file in os.listdir(self.eventsPath)
             if file.endswith(".txt") and "log" in file
         ]
-
+        selected_event = self.eventsPar.currentText()
+        selected_event_date = int(selected_event.split("-")[0])
+        selected_event_time = int(selected_event.split("-")[1])
         selected_event_id = self.eventsPar.currentIndex()
+
+        # check which recording mode was used to record the data
+        recording_mode = self.recordingModesPar.currentText()
+        print(f"Recording mode: {recording_mode}")
+
         eventmsrfile = msrfiles[selected_event_id]
-        eventnpyfile = npyfiles[selected_event_id]
         eventconfrawfile = confrawfiles[selected_event_id]
         eventlogfile = logfiles[selected_event_id]
-        print(eventlogfile)
+        self._set_logbrowser_text(os.path.join(self.eventsPath, eventlogfile))
 
         # load msr file and read confocal metadata
         msr_dataset = obf_support.File(
@@ -166,25 +208,105 @@ class LoaderWidget(QWidget):
             1,
             0,
         )
-        viewer_conf = self.viewer.add_image(
+        self.currentImage = self.viewer.add_image(
             image_conf,
             name=f"confocal-event{selected_event_id}",
             colormap="gray",
             blending="additive",
             contrast_limits=[0, np.max(image_conf)],
         )
-        viewer_conf.scale = (pxsize, pxsize)
-        viewer_conf.translate = (
-            conf_offset[0] - pxshift,
-            conf_offset[1] - pxshift,
+        self.currentImage.scale = (pxsize, pxsize)
+        self.currentImage.translate = (
+            conf_offset[0] + pxshift,
+            conf_offset[1] + pxshift,
         )
         print(
             f"Confocal image added to viewer: {image_conf.shape[0]}x{image_conf.shape[1]} pixels, pixel size: {pxsize} um, offset: {conf_offset} um"
         )
 
+        if recording_mode == "Single":
+            # load MINFLUX localization data of selected event
+            eventnpyfile = npyfiles[selected_event_id]
+            tracks, track_ids = self._load_MINFLUX_loc_data(eventnpyfile)
+            # add tracks to viewer
+            self.currentTracks = []
+            self.currentTracks.append(
+                self.viewer.add_tracks(
+                    tracks,
+                    name=f"minflux-tracks-event{selected_event_id}",
+                    tail_width=tail_width,
+                    tail_length=tail_length,
+                    head_length=head_length,
+                    opacity=opacity,
+                    blending="translucent",
+                    color_by="track_id",
+                )
+            )
+            print(
+                f"Tracks added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
+            )
+        elif recording_mode == "MultiROI":
+            # get date and time of selected event, and find all corresponding ROI npy files
+            if self.eventsPar.currentIndex() > 0:
+                conf_date_prev = int(
+                    self.events[self.eventsPar.currentIndex() - 1].split("-")[
+                        0
+                    ]
+                )
+            else:
+                conf_date_prev = 0
+            if (
+                self.eventsPar.currentIndex() > 0
+                and selected_event_date == conf_date_prev
+            ):
+                conf_time_prev = int(
+                    self.events[self.eventsPar.currentIndex() - 1].split("-")[
+                        1
+                    ]
+                )
+            else:
+                conf_time_prev = 0
+            eventnpyfiles = [
+                file
+                for file in npyfiles
+                if int(file.split("-")[0]) == selected_event_date
+                and int(file.split("-")[1].split("_")[0]) > conf_time_prev
+                and int(file.split("-")[1].split("_")[0]) < selected_event_time
+            ]
+
+            # loop through event npy files and add tracks to separate layers
+            self.currentTracks = []
+            for eventnpyfile in eventnpyfiles:
+                roi_idx = int(eventnpyfile.split("ROI")[1].split("-")[0])
+                # load MINFLUX localization data
+                tracks, track_ids = self._load_MINFLUX_loc_data(eventnpyfile)
+                # add tracks to viewer
+                self.currentTracks.append(
+                    self.viewer.add_tracks(
+                        tracks,
+                        name=f"minflux-tracks-event{selected_event_id}-roi{roi_idx}",
+                        tail_width=tail_width,
+                        tail_length=tail_length,
+                        head_length=head_length,
+                        opacity=opacity,
+                        blending="translucent",
+                        color_by="track_id",
+                    )
+                )
+                print(
+                    f"Tracks from roi {roi_idx} added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
+                )
+
+        # set default dims order to XY instead of YX
+        self.viewer.dims.order = (
+            1,
+            0,
+        )
+
+    def _load_MINFLUX_loc_data(self, npyfile, shuffle_ids=True):
         # load MINFLUX localization data
         loc_it = 3  # =4 for default 2D data, =9 for default 3D data
-        mfx_dataset = np.load(os.path.join(self.eventsPath, eventnpyfile))
+        mfx_dataset = np.load(os.path.join(self.eventsPath, npyfile))
         x = np.zeros((len(mfx_dataset), 1))
         y = np.zeros((len(mfx_dataset), 1))
         tid = np.zeros((len(mfx_dataset), 1))
@@ -193,7 +315,7 @@ class LoaderWidget(QWidget):
             x[i] = mfx_dataset[i][0][loc_it][2][0]
             y[i] = mfx_dataset[i][0][loc_it][2][1]
             tid[i] = mfx_dataset[i][4]
-            tim[i] = mfx_dataset[i][3]  # TODO Why do I not take tic anymore?
+            tim[i] = mfx_dataset[i][3]
         x_raw = x * 1e6
         y_raw = y * 1e6
         tid = tid.flatten()
@@ -204,27 +326,22 @@ class LoaderWidget(QWidget):
             f"Localization data loaded: {len(mfx_dataset)} localizations, {len(track_ids)} tracks"
         )
 
+        # randomize track IDs, so that plotting colors for each track will not be contiuous along time
+        if shuffle_ids:
+            unique_ids = np.unique(tid)
+            shuffled_ids = np.random.permutation(unique_ids)
+            mapping = dict(zip(unique_ids, shuffled_ids, strict=True))
+            tid_randomized = np.array([mapping[tid] for tid in tid])
+        else:
+            tid_randomized = tid
+
         tracks = np.zeros((len(mfx_dataset), 4))
-        tracks[:, 0] = tid
+        tracks[:, 0] = tid_randomized
         tracks[:, 1] = tim
         tracks[:, 2] = x_raw.flatten()
         tracks[:, 3] = y_raw.flatten()
 
-        # sort by track_id, then time
-        order = np.lexsort((tracks[:, 1], tracks[:, 0]))
-        tracks = tracks[order]
-
-        self.viewer.add_tracks(
-            tracks,
-            name=f"minflux-tracks-event{selected_event_id}",
-            tail_width=0.001,
-            tail_length=500,
-            opacity=0.8,
-            blending="translucent",
-        )
-        print(
-            f"Tracks added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
-        )
+        return tracks, track_ids
 
 
 # if we want even more control over our widget, we can use
