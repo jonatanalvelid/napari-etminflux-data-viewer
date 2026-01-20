@@ -3,6 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# data files
+*.npy
+*.msr
+*.txt
+*.tif
+*.pdf
+
 # C extensions
 *.so
 
@@ -82,8 +89,3 @@ venv/
 
 # written by setuptools_scm
 **/_version.py
-
-# data files
-.npy
-.msr
-.txt
