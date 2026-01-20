@@ -82,3 +82,8 @@ venv/
 
 # written by setuptools_scm
 **/_version.py
+
+# data files
+.npy
+.msr
+.txt
