@@ -6,18 +6,12 @@ visibility: public
 # categories: []
 contributions:
   commands:
-    - id: napari-etminflux-data-viewer.make_container_widget
-      python_name: napari_etminflux_data_viewer:ImageThreshold
-      title: Make threshold Container widget
     - id: napari-etminflux-data-viewer.make_loaderwidget
       python_name: napari_etminflux_data_viewer:LoaderWidget
       title: Make example LoaderWidget
   widgets:
-    - command: napari-etminflux-data-viewer.make_container_widget
-      display_name: Container Threshold
     - command: napari-etminflux-data-viewer.make_loaderwidget
       display_name: LoaderWidget
   menus:
     napari/layers/segment:
-      - command: napari-etminflux-data-viewer.make_container_widget
       - command: napari-etminflux-data-viewer.make_loaderwidget

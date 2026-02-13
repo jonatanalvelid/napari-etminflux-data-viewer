@@ -4,6 +4,6 @@ except ImportError:
     __version__ = "unknown"
 
 
-from ._widget import ImageThreshold, LoaderWidget
+from ._widget import LoaderWidget
 
-__all__ = ("LoaderWidget", "ImageThreshold")
+__all__ = ["LoaderWidget"]
