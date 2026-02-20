@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     import napari
 
 
-class LoaderWidget(QWidget):
+class EtMINFLUXDataViewerWidget(QWidget):
     """A widget to load etMINFLUX event files into napari. Currently only simple etMINFLUX experiments with a single ROI per event are supported."""
 
     def __init__(self, viewer: "napari.viewer.Viewer"):
@@ -225,8 +225,6 @@ class LoaderWidget(QWidget):
                 and int(file.split("-")[1].split("_")[0])
                 <= selected_event_time
             ]
-            print(eventconfrawfiles)
-            print(eventnpyfiles)
 
             # get number of ROIs between each conf file, to know how much time to add (by copying frames as we cannot have unevenly temporally spaced confocal frames) for each confocal stack frames
             conf_time_prev = 0
@@ -242,7 +240,6 @@ class LoaderWidget(QWidget):
                 ]
                 rois_between_confs.append(len(roi_files_between))
                 conf_time_prev = conf_time_curr
-            print(rois_between_confs)
 
             # load triggering confocal raw image
             confidx = 0
@@ -305,8 +302,6 @@ class LoaderWidget(QWidget):
             )  # add last confocal frame
             confimagestack = np.stack(confimagestack)
             confimagestack = confimagestack[:, np.newaxis, :, :]
-            print(np.shape(confimagestack))
-            print(initframes)
 
             # loop through event npy files and add tracks to separate layers
             self.currentTracks = []
@@ -329,13 +324,10 @@ class LoaderWidget(QWidget):
                 prevmaxtime = np.max(tracks[:, 1])
                 prevmaxtimes.append(prevmaxtime)
                 prevmaxtrackid = np.max(tracks[:, 0])
-            print(prevmaxtimes)
             time_between_tracking_windows = np.mean(np.diff(prevmaxtimes))
-            print(tracks[:, 1])
             tracks[:, 1] = tracks[:, 1] + time_between_tracking_windows * (
                 initframes - 1
             )  # add initial time, where only confocal is shown
-            print(tracks[:, 1])
 
             # add confocal image to viewer
             self.currentImage = self.viewer.add_image(

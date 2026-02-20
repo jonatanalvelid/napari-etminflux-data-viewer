@@ -4,6 +4,6 @@ except ImportError:
     __version__ = "unknown"
 
 
-from ._widget import LoaderWidget
+from ._widget import EtMINFLUXDataViewerWidget
 
-__all__ = ["LoaderWidget"]
+__all__ = ["EtMINFLUXDataViewerWidget"]

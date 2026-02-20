@@ -7,11 +7,11 @@ visibility: public
 contributions:
   commands:
     - id: napari-etminflux-data-viewer.make_loaderwidget
-      python_name: napari_etminflux_data_viewer:LoaderWidget
-      title: Make example LoaderWidget
+      python_name: napari_etminflux_data_viewer:EtMINFLUXDataViewerWidget
+      title: Make example EtMINFLUXDataViewerWidget
   widgets:
     - command: napari-etminflux-data-viewer.make_loaderwidget
-      display_name: LoaderWidget
+      display_name: EtMINFLUXDataViewerWidget
   menus:
     napari/layers/segment:
       - command: napari-etminflux-data-viewer.make_loaderwidget
