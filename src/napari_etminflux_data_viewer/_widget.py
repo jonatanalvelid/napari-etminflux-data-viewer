@@ -4,6 +4,7 @@ Copyright: 2026 Jonatan Alvelid
 napari widget for loading and visualizing data from event-triggered MINFLUX experiments.
 """
 
+import contextlib
 import os
 from typing import TYPE_CHECKING
 
@@ -42,10 +43,22 @@ class EtMINFLUXDataViewerWidget(QWidget):
         self.loadEventButton = QPushButton("Load event")
         self.loadEventButton.clicked.connect(self._load_event)
 
+        self.setLabelButton = QPushButton("Set overview label")
+        self.setLabelButton.clicked.connect(self._set_overview_label)
+
         self.localizationIterationLabel = QLabel(
             "Seq. iter. for final loc. (def.: 2D - 3; 3D - 4)"
         )
         self.localizationIterationField = QLineEdit("3")
+
+        self.labelTextLabelTime = QLabel(
+            "Time between frames (s) during confocal only"
+        )
+        self.labelTextFieldTime = QLineEdit("1")
+        self.labelTextLabel2 = QLabel("Label text, line 2")
+        self.labelTextField2 = QLineEdit("Confocal, xxx-xxx")
+        self.labelTextLabel3 = QLabel("Label text, line 3")
+        self.labelTextField3 = QLineEdit("MINFLUX, xxx-xxx")
 
         # add all events in a dropdown list
         self.events = []
@@ -100,7 +113,18 @@ class EtMINFLUXDataViewerWidget(QWidget):
         self.layout().addWidget(self.localizationIterationLabel, 6, 0)
         self.layout().addWidget(self.localizationIterationField, 6, 1)
         self.layout().addWidget(self.loadEventButton, 7, 0, 1, 2)
-        self.layout().addWidget(self.logTextBrowser, 8, 0, 1, 2)
+        self.layout().addWidget(self.labelTextLabelTime, 8, 0)
+        self.layout().addWidget(self.labelTextFieldTime, 8, 1)
+        self.layout().addWidget(self.labelTextLabel2, 9, 0)
+        self.layout().addWidget(self.labelTextField2, 9, 1)
+        self.layout().addWidget(self.labelTextLabel3, 10, 0)
+        self.layout().addWidget(self.labelTextField3, 10, 1)
+        self.layout().addWidget(self.setLabelButton, 11, 0, 1, 2)
+        self.layout().addWidget(self.logTextBrowser, 12, 0, 1, 2)
+
+        # default values
+        self.time_between_tracking_windows = 10
+        self.initframes = 1
 
     def _list_events_from_folder(self):
         self.eventsPath = QFileDialog.getExistingDirectory(
@@ -284,7 +308,7 @@ class EtMINFLUXDataViewerWidget(QWidget):
                     os.path.join(self.eventsPath, eventconfrawfile)
                 )
                 if idx == 0:
-                    initframes = np.shape(image_conf)[0]
+                    self.initframes = np.shape(image_conf)[0]
                 if len(np.shape(image_conf)) > 2:
                     if idx == 0:
                         for image in image_conf:
@@ -324,9 +348,11 @@ class EtMINFLUXDataViewerWidget(QWidget):
                 prevmaxtime = np.max(tracks[:, 1])
                 prevmaxtimes.append(prevmaxtime)
                 prevmaxtrackid = np.max(tracks[:, 0])
-            time_between_tracking_windows = np.mean(np.diff(prevmaxtimes))
-            tracks[:, 1] = tracks[:, 1] + time_between_tracking_windows * (
-                initframes - 1
+            self.time_between_tracking_windows = np.mean(np.diff(prevmaxtimes))
+            tracks[:, 1] = tracks[
+                :, 1
+            ] + self.time_between_tracking_windows * (
+                self.initframes - 1
             )  # add initial time, where only confocal is shown
 
             # add confocal image to viewer
@@ -338,8 +364,8 @@ class EtMINFLUXDataViewerWidget(QWidget):
                 contrast_limits=[0, np.max(confimagestack[0])],
             )
             self.currentImage.scale = (
-                time_between_tracking_windows,
-                1,
+                self.time_between_tracking_windows,
+                0.02,
                 pxsize,
                 pxsize,
             )
@@ -508,6 +534,7 @@ class EtMINFLUXDataViewerWidget(QWidget):
                             f"Tracks from roi {roi_idx} added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
                         )
         self.viewer.reset_view()
+        self.viewer.scale_bar.visible = True
 
     def _load_MINFLUX_loc_data(
         self,
@@ -611,3 +638,45 @@ class EtMINFLUXDataViewerWidget(QWidget):
             tracks[:, 3] = y_raw.flatten()
 
         return tracks, track_ids, True
+
+    def _set_overview_label(self):
+        # --- timing ---
+        N0 = self.time_between_tracking_windows * (
+            self.initframes - 1
+        )  # frame index that should be t = 0 s
+        dt_before = (
+            float(self.labelTextFieldTime.text())
+            / self.time_between_tracking_windows
+        )  # seconds per frame BEFORE N0
+        dt_after = 1.0  # seconds per frame AFTER N0
+
+        def compute_time(i: int) -> float:
+            return (i - N0) * (dt_before if i < N0 else dt_after)
+
+        # --- overlay appearance ---
+        self.viewer.text_overlay.visible = True
+        self.viewer.text_overlay.font_size = 24
+        self.viewer.text_overlay.color = (1, 1, 1, 1)  # RGBA white
+        self.viewer.text_overlay.position = "top left"
+
+        def _update_text_overlay(event=None):
+            i = int(self.viewer.dims.current_step[0])
+            t = compute_time(i)
+
+            # 3 lines text_overlay
+            self.viewer.text_overlay.text = (
+                f"time = {t:+.2f} s\n"
+                f"{self.labelTextField2.text()}\n"
+                f"{self.labelTextField3.text()}"
+            )
+
+        # Disconnect previous overlay callback
+        parent = self.viewer.window._qt_window
+        old_cb = getattr(parent, "_canvas_text_cb", None)
+        if old_cb is not None:
+            with contextlib.suppress(Exception):
+                self.viewer.dims.events.current_step.disconnect(old_cb)
+
+        parent._canvas_text_cb = _update_text_overlay
+        self.viewer.dims.events.current_step.connect(_update_text_overlay)
+        _update_text_overlay()
