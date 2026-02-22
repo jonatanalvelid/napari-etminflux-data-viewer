@@ -189,8 +189,8 @@ class EtMINFLUXDataViewerWidget(QWidget):
         ]
 
         # check which recording mode was used to record the data
-        recording_mode = self.recordingModesPar.currentText()
-        print(f"Recording mode: {recording_mode}")
+        self.recording_mode = self.recordingModesPar.currentText()
+        print(f"Recording mode: {self.recording_mode}")
 
         # check which imspector version was used to record the data (change of data structure in m2410)
         imspector_version = self.imspectorVersionsPar.currentText()
@@ -213,7 +213,7 @@ class EtMINFLUXDataViewerWidget(QWidget):
         eventlogfile = logfiles[selected_event_id]
         self._set_logbrowser_text(os.path.join(self.eventsPath, eventlogfile))
 
-        if "Follow" in recording_mode:
+        if "Follow" in self.recording_mode:
             # get date and time of selected event, and find all corresponding ROI npy files and conf tiff files
             if self.eventsPar.currentIndex() > 0:
                 conf_date_prev = int(
@@ -452,7 +452,7 @@ class EtMINFLUXDataViewerWidget(QWidget):
                 f"Confocal image added to viewer: {image_conf.shape[0]}x{image_conf.shape[1]} pixels, pixel size: {pxsize} um, offset: {conf_offset} um"
             )
 
-            if recording_mode == "Single":
+            if self.recording_mode == "Single":
                 # load MINFLUX localization data of selected event
                 eventnpyfile = npyfiles[selected_event_id]
                 tracks, track_ids, loadsuccess = self._load_MINFLUX_loc_data(
@@ -476,7 +476,7 @@ class EtMINFLUXDataViewerWidget(QWidget):
                     print(
                         f"Tracks added to viewer: {tracks.shape[0]} vertices, {len(track_ids)} tracks"
                     )
-            elif recording_mode == "MultiROI":
+            elif self.recording_mode == "MultiROI":
                 # get date and time of selected event, and find all corresponding ROI npy files
                 if self.eventsPar.currentIndex() > 0:
                     conf_date_prev = int(
@@ -640,23 +640,28 @@ class EtMINFLUXDataViewerWidget(QWidget):
         return tracks, track_ids, True
 
     def _set_overview_label(self):
-        # --- timing ---
-        N0 = self.time_between_tracking_windows * (
-            self.initframes - 1
-        )  # frame index that should be t = 0 s
-        dt_before = (
-            float(self.labelTextFieldTime.text())
-            / self.time_between_tracking_windows
-        )  # seconds per frame BEFORE N0
-        dt_after = 1.0  # seconds per frame AFTER N0
+        # timestamp help parameters
+        if "Follow" in self.recording_mode:
+            N0 = self.time_between_tracking_windows * (
+                self.initframes - 1
+            )  # frame index that should be t = 0 s
+            dt_before = (
+                float(self.labelTextFieldTime.text())
+                / self.time_between_tracking_windows
+            )  # seconds per frame BEFORE N0
+            dt_after = 1.0  # seconds per frame AFTER N0
+        else:
+            N0 = 0  # frame index that should be t = 0 s
+            dt_before = 1.0  # seconds per frame BEFORE N0
+            dt_after = 1.0  # seconds per frame AFTER N0
 
         def compute_time(i: int) -> float:
             return (i - N0) * (dt_before if i < N0 else dt_after)
 
-        # --- overlay appearance ---
+        # overlay appearance
         self.viewer.text_overlay.visible = True
         self.viewer.text_overlay.font_size = 24
-        self.viewer.text_overlay.color = (1, 1, 1, 1)  # RGBA white
+        self.viewer.text_overlay.color = (1, 1, 1, 1)
         self.viewer.text_overlay.position = "top left"
 
         def _update_text_overlay(event=None):
