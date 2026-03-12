@@ -13,15 +13,9 @@ A napari plugin for viewing overlapping confocal and MINFLUX data from etMINFLUX
 
 ----------------------------------
 
-This [napari] plugin was generated with [copier] using the [napari-plugin-template] (None).
+This [napari] plugin was generated with [copier] using the [napari-plugin-template].
 
-<!--
-Don't miss the full getting started guide to set up your new package:
-https://github.com/napari/napari-plugin-template#getting-started
-
-and review the napari docs for plugin developers:
-https://napari.org/stable/plugins/index.html
--->
+This plugin was developed with: **napari v0.6.6**, and has been tested with: **napari v0.6.6**. 
 
 ## Installation
 
